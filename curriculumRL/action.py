@@ -10,25 +10,12 @@ class Action(Enum):
     move_up_left = 5
     move_down_right = 6
     move_down_left = 7
-    grab_up = 8
-    grab_right = 9
-    grab_down = 10
-    grab_left = 11
-    grab_up_right = 12
-    grab_up_left = 13
-    grab_down_right = 14
-    grab_down_left = 15
-    drop_object = 16
-    danger_sensing = 17
-    get_occupancy_map = 18
-    get_objects_held = 19
-    check_item = 20
-    check_robot = 21
-    get_messages = 22
-    send_message = 23
-    request_item_info = 24
-    request_agent_info = 25
-    wait = 26
+    grab_object = 8
+    drop_object = 9
+    danger_sensing = 10
+    get_messages = 11
+    send_message = 12
+    wait = 13
 
 
 # More sub-Tasks to be defined (These are the basic ones)

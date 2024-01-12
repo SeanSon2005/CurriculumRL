@@ -2,3 +2,9 @@
 /lib
 pyvenv.cfg
 /include
+/share
+pyvenv.cfg
+LICENSE-GPL
+LICENSE-SWIG
+LICENSE-UNIVERSITIES
+CMakeLists.txt
