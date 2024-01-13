@@ -12,10 +12,10 @@ class Action(Enum):
     move_down_left = 7
     grab_object = 8
     drop_object = 9
-    danger_sensing = 10
-    get_messages = 11
-    send_message = 12
-    wait = 13
+    # danger_sensing = 10
+    # get_messages = 11
+    # send_message = 12
+    # wait = 13
 
 
 # More sub-Tasks to be defined (These are the basic ones)

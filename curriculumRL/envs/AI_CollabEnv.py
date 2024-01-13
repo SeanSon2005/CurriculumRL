@@ -39,8 +39,8 @@ class AI_CollabEnv(gym.Env):
 				# "frame": spaces.Box(low=-2, high=3, shape=(MAP_SIZE,MAP_SIZE), dtype= np.int16),
 				# stores the X and Y position of robot
                 "ego_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype= np.int16),
-				# stores the states of objects held (-1: No object, 0: Left Hand, 1: Right Hand)
-                "objects_held": spaces.Discrete(3, start=-1),
+				# stores the states of objects held (0: No object, 1: Object in hand)
+                "objects_held": spaces.Discrete(2, start=0),
 				# stores the number items in view of the robot (0 - MAX_ITEMS)
                 "num_items": spaces.Discrete(MAX_ITEMS+1), 
 				# stores the info of the item that has been scanned
@@ -112,26 +112,46 @@ class AI_CollabEnv(gym.Env):
 	
 	def move(self, adjustment):
 		x, y = adjustment
-		if (self.ego_location[0] + x) != -1 and (self.ego_location[0] + x) != MAP_SIZE:
-			self.ego_location[0] += x
-		if (self.ego_location[1] + y) != -1 and (self.ego_location[1] + y) != MAP_SIZE:
-			self.ego_location[1] += y
+		if (self.ego_location[0] + x) == -1 or (self.ego_location[0] + x) == MAP_SIZE:
+			return True
+		if (self.ego_location[1] + y) == -1 or (self.ego_location[1] + y) == MAP_SIZE:
+			return True
+		self.ego_location[0] += x
+		self.ego_location[1] += y
+		return False
 	
 	def step(self, action):
+		# init reward
+		reward = 0
+		terminate = False
+
 		# Move Robot
 		if action['action'] < 8:
-			self.move(MOVE_DICT[action['action']])
+			if self.move(MOVE_DICT[action['action']]):
+				terminate = True
+				reward = -1
+
 		# Pick Object Up
-		elif action['action'] >= 8:
+		elif action['action'] == 8:
 			for object_location in self.objects['location']:
-				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
+				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1] and self.objects_held == 0:
+					# Denote that object has been picked up (-1 -1 is robot's "storage")
 					object_location[0] = -1
 					object_location[1] = -1
+					self.objects_held = 1
+					reward = 1
+
 		# Drop Object
+		elif action['action'] == 9:
+			for object_location in self.objects['location']:
+				# Place picked up object back on grid
+				if object_location[0] == -1:
+					object_location[0] = self.ego_location[0]
+					object_location[1] = self.ego_location[1]
 
 		self.render()
 
-		return self.get_obs(), 0, False, False, {}
+		return self.get_obs(), reward, terminate, False, {}
 		
 	def render(self):
 		# if first time, initialize pygame and clock
@@ -192,7 +212,7 @@ class AI_CollabEnv(gym.Env):
 		super().reset(seed=seed)
 
 		# Obversations
-		self.objects_held = -1
+		self.objects_held = 0
 		self.strength = 1
 		self.num_messages = 0
 		return self.get_obs(), {}
