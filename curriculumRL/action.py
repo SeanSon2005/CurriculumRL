@@ -17,7 +17,6 @@ class Action(Enum):
     # send_message = 12
     # wait = 13
 
-
 # More sub-Tasks to be defined (These are the basic ones)
 class Tasks(Enum):
     move = 0

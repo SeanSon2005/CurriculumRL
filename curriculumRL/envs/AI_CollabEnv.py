@@ -28,11 +28,7 @@ MOVE_DICT = {
 
 class AI_CollabEnv(gym.Env):
 	def __init__(self):
-		self.action_space = spaces.Dict(
-            {
-				"action": spaces.Discrete(len(Action)),
-            }
-        )
+		self.action_space = spaces.Discrete(len(Action))
 		self.observation_space = spaces.Dict(
             {
 				# Stores the current vision of the robot
@@ -92,7 +88,7 @@ class AI_CollabEnv(gym.Env):
 			# "weight": np.ones(MAX_ITEMS),
             # "isDangerous": np.ones(MAX_ITEMS),
             # "danger_confidence": np.ones(MAX_ITEMS, dtype=float),
-            "location": np.zeros((MAX_ITEMS,2))
+            "location": np.zeros((MAX_ITEMS,2), dtype=np.int16)
 		}
 		object_count = 0
 		for i in range(MAX_ITEMS):
@@ -126,13 +122,13 @@ class AI_CollabEnv(gym.Env):
 		terminate = False
 
 		# Move Robot
-		if action['action'] < 8:
-			if self.move(MOVE_DICT[action['action']]):
+		if action < 8:
+			if self.move(MOVE_DICT[action]):
 				terminate = True
 				reward = -1
 
 		# Pick Object Up
-		elif action['action'] == 8:
+		elif action == 8:
 			for object_location in self.objects['location']:
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1] and self.objects_held == 0:
 					# Denote that object has been picked up (-1 -1 is robot's "storage")
@@ -142,7 +138,7 @@ class AI_CollabEnv(gym.Env):
 					reward = 1
 
 		# Drop Object
-		elif action['action'] == 9:
+		elif action == 9:
 			for object_location in self.objects['location']:
 				# Place picked up object back on grid
 				if object_location[0] == -1:
