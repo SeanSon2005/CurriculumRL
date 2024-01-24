@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.utils.data import DataLoader, Dataset
 
 import math
 import numpy as np
@@ -12,6 +13,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from IPython import display
 from itertools import count
+import os
 
 import gymnasium as gym
 import sys
@@ -23,6 +25,7 @@ register(
      max_episode_steps=1000,
 )
 from curriculumRL.action import Action
+from x_transformers import ContinuousTransformerWrapper, Encoder
 
 MODEL_PARAMETERS = {
     "dim":16,
@@ -31,6 +34,61 @@ MODEL_PARAMETERS = {
     "depth":6,
     "extra_states":0
 }
+
+def seed_everything(seed):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
+
+numpy_to_torch_dtype_dict = {
+    'bool'      : torch.bool,
+    "<class 'int'>" : torch.int64,
+    'int8'      : torch.int64,
+    'int16'     : torch.int64,
+    'int32'     : torch.int64,
+    'int64'     : torch.int64,
+    'float16'   : torch.float32,
+    'float32'   : torch.float32,
+    'float64'   : torch.float32
+}
+
+def batchDictionary(states, device = 'cuda'):
+    batch_size = len(states)
+
+    # Generate batches
+    dictionary_out = {}
+    for key in states[0]:
+        try:
+            data_type = numpy_to_torch_dtype_dict[str(states[0][key].dtype)]
+            data_shape = states[0][key].shape
+        except:
+            data_type = numpy_to_torch_dtype_dict[str(type(states[0][key]))]
+            data_shape = (1,)
+        
+        state_info = torch.zeros(((batch_size,)+data_shape), 
+                                 dtype=data_type, 
+                                 device=device)
+        for i in range(batch_size):
+            state_info[i] = torch.tensor(states[i][key])
+        dictionary_out[key] = state_info
+
+    # Generate masks
+    masks = torch.zeros((batch_size,len(states[i]['item_distance'])), 
+                        dtype=torch.bool,
+                        device=device)
+    for i in range(batch_size):
+        mask = torch.zeros(len(states[i]['item_distance']))
+        mask[:states[i]['num_items']] = 1
+        masks[i] = mask
+    dictionary_out['mask'] = masks
+
+    # Return dictionary
+    return dictionary_out
+    
 
 class Action_Model(nn.Module):
     def __init__(self, **kwargs):
@@ -48,7 +106,7 @@ class Action_Model(nn.Module):
                                        batch_first=True,
                                        norm_first=True),
                                        MODEL_PARAMETERS['depth'])
-        
+                
         # Q value output
         input_size = MODEL_PARAMETERS['dim'] + MODEL_PARAMETERS['extra_states']
         self.deepQ = nn.Sequential(
@@ -57,15 +115,22 @@ class Action_Model(nn.Module):
         )
     
     def forward(self, obs):
+        # get mask
+        mask = obs['mask']
         # Get item_locations (batch, seq_len, x_y)
-        items = obs['item_info']['location']
-
-        emb = self.emb(items)
-        
+        items = obs['item_distance']
+        # Get batch size
+        batch_size = items.shape[0]
+        # (0,0) denotes the class token
+        input = torch.cat((torch.zeros((batch_size,1,2),device=device),items), axis=1)
+        # Project in
+        emb = self.emb(input)
+        # Transformer
         transformer_encoding = self.transformer(emb)
-
-        action_Q_values = self.deepQ(transformer_encoding)
-
+        # Project Out
+        model_out = self.deepQ(transformer_encoding)
+        # get the class token only
+        action_Q_values = model_out[:, 0, :]
         return action_Q_values
 
 Transition = namedtuple('Transition',
@@ -123,9 +188,6 @@ class DeepQControl:
         steps_done += 1
         if sample > eps_threshold:
             with torch.no_grad():
-                # t.max(1) will return the largest column value of each row.
-                # second column on max result is index of where max element was
-                # found, so we pick action with the larger expected reward.
                 return self.policy_net(state).max(1).indices.view(1, 1)
         else:
             return torch.tensor([[env.action_space.sample()]], device=device, dtype=torch.long)
@@ -165,20 +227,23 @@ class DeepQControl:
         # format batch
         batch = Transition(*zip(*transitions))
 
-        # Compute a mask of non-final states and concatenate the batch elements
-        # (a final state would've been the one after which simulation ended)
+        # get mask of non-final states
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                             batch.next_state)), device=self.device, dtype=torch.bool)
-        non_final_next_states = torch.cat([s for s in batch.next_state
-                                                    if s is not None])
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
+        # get batch elements
+        non_final_next_states = [s for s in batch.next_state
+                                                    if s is not None]
+
+        state_batch = batchDictionary(states=list(batch.state),device=device)
+        action_batch = batch.action
+        reward_batch = batch.reward
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
-        # for each batch state according to policy_net
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+        # for each batch state according to policy_net.
+        #state_action_values = self.policy_net(state_batch)#.gather(1, action_batch)
+
+        raise Exception("nope")
 
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
@@ -202,30 +267,8 @@ class DeepQControl:
         torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
         self.optimizer.step()
 
-
-def state_to_tensor(state):
-    return {
-            'item_info':{
-                'location':torch.tensor(state['item_info']['location'][:item_num], 
-                                        dtype=torch.float32, 
-                                        device=device).unsqueeze(0)
-            },
-            'ego_location':torch.tensor(state['ego_location'], 
-                                        dtype=torch.int64, 
-                                        device=device),
-            'objects_held':torch.tensor(state['objects_held'], 
-                                        dtype=torch.int64, 
-                                        device=device),
-            'strength':torch.tensor(state['strength'], 
-                                    dtype=torch.int64, 
-                                    device=device),
-            'num_messages':torch.tensor(state['num_messages'], 
-                                        dtype=torch.int64, 
-                                        device=device)
-        }
-
-
 if __name__ == '__main__':
+    seed_everything(2024)
 
     env = gym.make('AI_CollabEnv-v0')
 
@@ -243,8 +286,7 @@ if __name__ == '__main__':
         state, info = env.reset()
 
         # convert dictionary to tensor
-        item_num = state['num_items']
-        state_tensor = state_to_tensor(state=state)
+        state_tensor = batchDictionary(states=[state],device=device)
 
         # train
         for t in count():
@@ -256,7 +298,7 @@ if __name__ == '__main__':
             if terminated:
                 next_state = None
             else:
-                next_state = state_to_tensor(state=observation)
+                next_state = batchDictionary(states=[observation],device=device)
 
             # Store the transition in memory
             q_control.memory_replay.push(state, action, next_state, reward)
@@ -279,6 +321,8 @@ if __name__ == '__main__':
                 q_control.episode_durations.append(t + 1)
                 q_control.plot_durations()
                 break
+
+            print('step complete')
 
     print('Complete')
     q_control.plot_durations(show_result=True)

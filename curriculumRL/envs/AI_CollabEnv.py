@@ -12,7 +12,7 @@ MAX_ITEM_WEIGHT = 2
 MAX_ITEMS = 40
 MAX_ROBOTS = 1
 WINDOW_SIZE = 1000
-FRAMERATE = 60
+FRAMERATE = 120
 VISION_DISTANCE = 8
 
 MOVE_DICT = {
@@ -27,7 +27,8 @@ MOVE_DICT = {
 }
 
 class AI_CollabEnv(gym.Env):
-	def __init__(self):
+	def __init__(self, render_mode = True):
+		self.render_mode = render_mode
 		self.action_space = spaces.Discrete(len(Action))
 		self.observation_space = spaces.Dict(
             {
@@ -40,20 +41,12 @@ class AI_CollabEnv(gym.Env):
 				# stores the number items in view of the robot (0 - MAX_ITEMS)
                 "num_items": spaces.Discrete(MAX_ITEMS+1), 
 				# stores the info of the item that has been scanned
-                "item_info": spaces.Dict(
-                    {
-                        # "weight": spaces.MultiDiscrete(np.array([MAX_ITEM_WEIGHT]*MAX_ITEMS)),
-                        # "isDangerous": spaces.MultiDiscrete(np.ones(MAX_ITEMS)),
-                        # "danger_confidence": spaces.Box(low=0, high=1, shape=(MAX_ITEMS,), dtype=float),
-                        "location": spaces.Box(low=-np.infty, high=np.infty, shape=(MAX_ITEMS,2), dtype= np.int16),
-                    }
-                ),
-				# # stores the locaton of the neighboring robot
-                # "neighbors_info": spaces.Dict(
-                #     {
-                #         "location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype= np.int16)
-                #     }
-                # ),
+				"item_distance": spaces.Box(low=-np.infty, high=np.infty, shape=(MAX_ITEMS,2), dtype= np.int16),
+
+				# "item_weight": spaces.MultiDiscrete(np.array([MAX_ITEM_WEIGHT]*MAX_ITEMS)),
+				# "item_isDangerous": spaces.MultiDiscrete(np.ones(MAX_ITEMS)),
+				# "item_danger_confidence": spaces.Box(low=0, high=1, shape=(MAX_ITEMS,), dtype=float),
+
 				# # stores the strength of the robot (0 - Maxiumum Possible Combined Strength)
                 "strength": spaces.Discrete(MAX_ROBOTS + 2),
 				# # stores the current number of message received (0 - 99)
@@ -65,17 +58,16 @@ class AI_CollabEnv(gym.Env):
 
 		# Create Starter Map elements
 		self.ego_location = np.array([MAP_SIZE//2,MAP_SIZE//2],dtype=np.int16)
-		self.objects = {
-			# "weight": np.ones(MAX_ITEMS),
-            # "isDangerous": np.ones(MAX_ITEMS),
-            # "danger_confidence": np.ones(MAX_ITEMS, dtype=float),
-            "location": np.zeros((MAX_ITEMS,2), dtype=np.int16)
-		}
+		self.item_location = np.zeros((MAX_ITEMS,2), dtype=np.int16)
+		self.item_weight = np.ones(MAX_ITEMS)
+		self.item_isDangerous = np.ones(MAX_ITEMS)
+		self.item_danger_confidence = np.ones(MAX_ITEMS, dtype=float)
+
 		for i in range(MAX_ITEMS):
 			r = np.random.randint(0,MAP_SIZE)
 			c = np.random.randint(0,MAP_SIZE)
-			self.objects["location"][i][0] = r
-			self.objects["location"][i][1] = c
+			self.item_location[i][0] = r
+			self.item_location[i][1] = c
 
 	def isInView(self, row, col):
 		if row < 0 or col < 0:
@@ -84,23 +76,21 @@ class AI_CollabEnv(gym.Env):
 		return distance < VISION_DISTANCE
 
 	def get_obs(self):
-		observed_objects = {
-			# "weight": np.ones(MAX_ITEMS),
-            # "isDangerous": np.ones(MAX_ITEMS),
-            # "danger_confidence": np.ones(MAX_ITEMS, dtype=float),
-            "location": np.zeros((MAX_ITEMS,2), dtype=np.int16)
-		}
+		item_distance = np.zeros((MAX_ITEMS,2), dtype=np.int16)
 		object_count = 0
 		for i in range(MAX_ITEMS):
-			if self.isInView(self.objects["location"][i][0],self.objects["location"][i][1]):
-				observed_objects["location"][object_count] = self.objects["location"][i]
+			if self.isInView(self.item_location[i][0],self.item_location[i][1]):
+				x_dist = self.item_location[i][0] - self.ego_location[0]
+				y_dist = self.item_location[i][1] - self.ego_location[1]
+				item_distance[object_count][0] = x_dist
+				item_distance[object_count][1] = y_dist
 				object_count += 1
 				
 		observation = {
 			"ego_location": self.ego_location,
 			"objects_held": self.objects_held,
 			"num_items": object_count,
-			"item_info": observed_objects,
+			"item_distance": item_distance,
 			"strength" : self.strength,
 			"num_messages": self.num_messages
         }
@@ -129,23 +119,24 @@ class AI_CollabEnv(gym.Env):
 
 		# Pick Object Up
 		elif action == 8:
-			for object_location in self.objects['location']:
+			for object_location in self.item_location:
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1] and self.objects_held == 0:
 					# Denote that object has been picked up (-1 -1 is robot's "storage")
 					object_location[0] = -1
 					object_location[1] = -1
 					self.objects_held = 1
-					reward = 1
+					reward = 10
 
 		# Drop Object
 		elif action == 9:
-			for object_location in self.objects['location']:
+			for object_location in self.item_location:
 				# Place picked up object back on grid
 				if object_location[0] == -1:
 					object_location[0] = self.ego_location[0]
 					object_location[1] = self.ego_location[1]
 
-		self.render()
+		if self.render_mode:
+			self.render()
 
 		return self.get_obs(), reward, terminate, False, {}
 		
@@ -199,7 +190,7 @@ class AI_CollabEnv(gym.Env):
 				if self.isInView(r, c):
 					map[r][c] = 0
 		# Box Placements
-		for object in self.objects["location"]:
+		for object in self.item_location:
 			if map[object[0]][object[1]] == 0:
 				map[object[0]][object[1]] = 2
 		return map
@@ -207,7 +198,8 @@ class AI_CollabEnv(gym.Env):
 	def reset(self, seed=None, options=None):
 		super().reset(seed=seed)
 
-		# Obversations
+		# Reset Robot Values
+		self.ego_location = np.array([MAP_SIZE//2,MAP_SIZE//2],dtype=np.int16)
 		self.objects_held = 0
 		self.strength = 1
 		self.num_messages = 0

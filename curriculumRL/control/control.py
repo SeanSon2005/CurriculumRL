@@ -19,7 +19,7 @@ for i in range(1):
         
         action = env.action_space.sample()  # agent policy that uses the observation and info
         observation, reward, terminated, truncated, info = env.step(action)
-        # print(observation['item_info']['location'][:observation['num_items']])
+        print(observation['item_distance'][:observation['num_items']])
         done = terminated or truncated
 
 env.close()
