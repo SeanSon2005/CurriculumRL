@@ -7,7 +7,7 @@ import numpy as np
 import pygame
 from action import Action
 
-MAP_SIZE = 10
+MAP_SIZE = 4
 MAX_ITEM_WEIGHT = 2
 MAX_ITEMS = 2
 MAX_ROBOTS = 1
@@ -114,13 +114,15 @@ class AI_CollabEnv(gym.Env):
 		if action < 8:
 			if self.move(MOVE_DICT[action]):
 				terminate = True
-				reward = -4
+				reward = -10
 
 		# Reward for being on object
 		if not terminate:
 			for object_location in self.item_location:
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
-					reward = 1
+					print("TOUCHDOWN")
+					terminate = True
+					reward = 10
 					break
 
 		# Pick Object Up

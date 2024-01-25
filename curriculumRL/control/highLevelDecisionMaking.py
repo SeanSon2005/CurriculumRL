@@ -35,7 +35,7 @@ WEIGHTS_FOLDER = SAVE_FOLDER+"run"+str(index+1)+"/"
 os.mkdir(WEIGHTS_FOLDER)
 
 MODEL_PARAMETERS = {
-    "dim":16,
+    "dim":4,
     "heads":4,
     "dropout":0.1,
     "depth":6,
