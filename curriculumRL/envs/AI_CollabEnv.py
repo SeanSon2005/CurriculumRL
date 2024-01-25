@@ -7,9 +7,9 @@ import numpy as np
 import pygame
 from action import Action
 
-MAP_SIZE = 50
+MAP_SIZE = 10
 MAX_ITEM_WEIGHT = 2
-MAX_ITEMS = 40
+MAX_ITEMS = 2
 MAX_ROBOTS = 1
 WINDOW_SIZE = 1000
 FRAMERATE = 120
@@ -54,7 +54,6 @@ class AI_CollabEnv(gym.Env):
             }
         )
 		self.window = None
-		self.clock = None
 
 		# Create Starter Map elements
 		self.ego_location = np.array([MAP_SIZE//2,MAP_SIZE//2],dtype=np.int16)
@@ -115,7 +114,14 @@ class AI_CollabEnv(gym.Env):
 		if action < 8:
 			if self.move(MOVE_DICT[action]):
 				terminate = True
-				reward = -1
+				reward = -4
+
+		# Reward for being on object
+		if not terminate:
+			for object_location in self.item_location:
+				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
+					reward = 1
+					break
 
 		# Pick Object Up
 		elif action == 8:
@@ -125,6 +131,7 @@ class AI_CollabEnv(gym.Env):
 					object_location[0] = -1
 					object_location[1] = -1
 					self.objects_held = 1
+					terminate = True
 					reward = 10
 
 		# Drop Object
@@ -148,8 +155,6 @@ class AI_CollabEnv(gym.Env):
 			self.window = pygame.display.set_mode(
                 (WINDOW_SIZE, WINDOW_SIZE)
             )
-		if self.clock is None:
-			self.clock = pygame.time.Clock()
 			
 		canvas = pygame.Surface((WINDOW_SIZE, WINDOW_SIZE))
 		canvas.fill((255, 255, 255))
@@ -177,7 +182,6 @@ class AI_CollabEnv(gym.Env):
 		self.window.blit(canvas, canvas.get_rect())
 		pygame.event.pump()
 		pygame.display.update()
-		self.clock.tick(FRAMERATE)
 	
 	def generateOccupancyMap(self):
 		# Empty Map

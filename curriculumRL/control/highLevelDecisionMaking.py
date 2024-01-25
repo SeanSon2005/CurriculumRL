@@ -4,6 +4,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
+from tqdm import tqdm
 import math
 import numpy as np
 import random
@@ -22,10 +23,16 @@ from gymnasium.envs.registration import register
 register(
      id="AI_CollabEnv-v0",
      entry_point="curriculumRL.envs:AI_CollabEnv",
-     max_episode_steps=1000,
+     max_episode_steps=100,
 )
 from curriculumRL.action import Action
 from x_transformers import ContinuousTransformerWrapper, Encoder
+
+SAVE_FOLDER = "curriculumRL/runs/"
+
+index = len(os.listdir(SAVE_FOLDER))
+WEIGHTS_FOLDER = SAVE_FOLDER+"run"+str(index+1)+"/"
+os.mkdir(WEIGHTS_FOLDER)
 
 MODEL_PARAMETERS = {
     "dim":16,
@@ -33,6 +40,16 @@ MODEL_PARAMETERS = {
     "dropout":0.1,
     "depth":6,
     "extra_states":0
+}
+
+STATE_TYPES = {
+    "mask": torch.bool,
+    "ego_location": torch.float32,
+    "objects_held": torch.int64,
+    "num_items": torch.int64,
+    "item_distance": torch.float32,
+    "strength" : torch.int64,
+    "num_messages": torch.int64
 }
 
 def seed_everything(seed):
@@ -44,17 +61,11 @@ def seed_everything(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-numpy_to_torch_dtype_dict = {
-    'bool'      : torch.bool,
-    "<class 'int'>" : torch.int64,
-    'int8'      : torch.int64,
-    'int16'     : torch.int64,
-    'int32'     : torch.int64,
-    'int64'     : torch.int64,
-    'float16'   : torch.float32,
-    'float32'   : torch.float32,
-    'float64'   : torch.float32
-}
+def createMask(state):
+    mask = np.zeros(len(state['item_distance']))
+    mask[:state['num_items']] = 1
+    state['mask'] = mask
+    return state
 
 def batchDictionary(states, device = 'cuda'):
     batch_size = len(states)
@@ -62,29 +73,19 @@ def batchDictionary(states, device = 'cuda'):
     # Generate batches
     dictionary_out = {}
     for key in states[0]:
+        # determine shape
         try:
-            data_type = numpy_to_torch_dtype_dict[str(states[0][key].dtype)]
-            data_shape = states[0][key].shape
+            data_shape = (batch_size,)+(states[0][key].squeeze().shape)
         except:
-            data_type = numpy_to_torch_dtype_dict[str(type(states[0][key]))]
-            data_shape = (1,)
+            data_shape = (batch_size,)
         
-        state_info = torch.zeros(((batch_size,)+data_shape), 
-                                 dtype=data_type, 
+        # get torch matrix
+        state_info = torch.zeros(data_shape, 
+                                 dtype=STATE_TYPES[key], 
                                  device=device)
         for i in range(batch_size):
             state_info[i] = torch.tensor(states[i][key])
         dictionary_out[key] = state_info
-
-    # Generate masks
-    masks = torch.zeros((batch_size,len(states[i]['item_distance'])), 
-                        dtype=torch.bool,
-                        device=device)
-    for i in range(batch_size):
-        mask = torch.zeros(len(states[i]['item_distance']))
-        mask[:states[i]['num_items']] = 1
-        masks[i] = mask
-    dictionary_out['mask'] = masks
 
     # Return dictionary
     return dictionary_out
@@ -231,19 +232,16 @@ class DeepQControl:
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                             batch.next_state)), device=self.device, dtype=torch.bool)
         # get batch elements
-        non_final_next_states = [s for s in batch.next_state
-                                                    if s is not None]
+        non_final_next_states = batchDictionary(states=[s for s in batch.next_state if s is not None],device=device)
 
         state_batch = batchDictionary(states=list(batch.state),device=device)
-        action_batch = batch.action
-        reward_batch = batch.reward
+        action_batch = torch.cat(batch.action)
+        reward_batch = torch.cat(batch.reward)
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net.
-        #state_action_values = self.policy_net(state_batch)#.gather(1, action_batch)
-
-        raise Exception("nope")
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
 
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
@@ -268,7 +266,7 @@ class DeepQControl:
         self.optimizer.step()
 
 if __name__ == '__main__':
-    seed_everything(2024)
+    #seed_everything(2024)
 
     env = gym.make('AI_CollabEnv-v0')
 
@@ -281,12 +279,12 @@ if __name__ == '__main__':
         num_episodes = 600
     else:
         num_episodes = 50
-    for i_episode in range(num_episodes):
+    for i_episode in tqdm(range(num_episodes)):
         # Initialize the environment and get it's state
         state, info = env.reset()
 
         # convert dictionary to tensor
-        state_tensor = batchDictionary(states=[state],device=device)
+        state_tensor = batchDictionary(states=[createMask(state)],device=device)
 
         # train
         for t in count():
@@ -298,7 +296,7 @@ if __name__ == '__main__':
             if terminated:
                 next_state = None
             else:
-                next_state = batchDictionary(states=[observation],device=device)
+                next_state = batchDictionary(states=[createMask(observation)],device=device)
 
             # Store the transition in memory
             q_control.memory_replay.push(state, action, next_state, reward)
@@ -321,10 +319,16 @@ if __name__ == '__main__':
                 q_control.episode_durations.append(t + 1)
                 q_control.plot_durations()
                 break
-
-            print('step complete')
+        # Save weights per episode
+        file_name = WEIGHTS_FOLDER + "intermediate.pt"
+        torch.save(q_control.policy_net.state_dict(), file_name)
 
     print('Complete')
     q_control.plot_durations(show_result=True)
     plt.ioff()
     plt.show()
+
+    # Save Ending Weights
+    file_name = WEIGHTS_FOLDER + "best.pt"
+    torch.save(q_control.policy_net.state_dict(), file_name)
+
