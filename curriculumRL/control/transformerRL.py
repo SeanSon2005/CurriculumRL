@@ -29,6 +29,7 @@ from curriculumRL.action import Action
 from x_transformers import ContinuousTransformerWrapper, Encoder
 
 SAVE_FOLDER = "curriculumRL/runs/"
+LOAD_PREV_WEIGHTS = True
 
 index = len(os.listdir(SAVE_FOLDER))
 WEIGHTS_FOLDER = SAVE_FOLDER+"run"+str(index+1)+"/"
@@ -43,6 +44,7 @@ MODEL_PARAMETERS = {
 }
 
 STATE_TYPES = {
+    "frame": torch.int64,
     "mask": torch.bool,
     "ego_location": torch.float32,
     "objects_held": torch.int64,
@@ -75,7 +77,7 @@ def batchDictionary(states, device = 'cuda'):
     for key in states[0]:
         # determine shape
         try:
-            data_shape = (batch_size,)+(states[0][key].squeeze().shape)
+            data_shape = (batch_size,)+(states[0][key].shape)
         except:
             data_shape = (batch_size,)
         
@@ -119,15 +121,25 @@ class Action_Model(nn.Module):
         # get mask
         mask = obs['mask']
         # Get item_locations (batch, seq_len, x_y)
+        ego_location = obs['ego_location'].unsqueeze(1)
         items = obs['item_distance']
         # Get batch size
         batch_size = items.shape[0]
         # (0,0) denotes the class token
-        input = torch.cat((torch.zeros((batch_size,1,2),device=device),items), axis=1)
+        # START TOKEN, ego_location, item distances
+        input = torch.cat((torch.zeros((batch_size,1,2),
+                                       device=device),
+                           ego_location,
+                           items), axis=1)
+        # adjust mask (true) for START_TOKEN & ego_location
+        mask = torch.cat((torch.ones((batch_size,2),
+                                     dtype=torch.bool,
+                                     device=device),
+                          mask), axis = 1)
         # Project in
         emb = self.emb(input)
         # Transformer
-        transformer_encoding = self.transformer(emb)
+        transformer_encoding = self.transformer(emb, src_key_padding_mask=~mask)
         # Project Out
         model_out = self.deepQ(transformer_encoding)
         # get the class token only
@@ -171,6 +183,12 @@ class DeepQControl:
         # define models
         self.policy_net = Action_Model().to(self.device)
         self.target_net = Action_Model().to(self.device)
+
+        # load previous weights if requested
+        if LOAD_PREV_WEIGHTS:
+            print("loaded weights")
+            self.policy_net.load_state_dict(torch.load("curriculumRL/runs/WEIGHTS/intermediate.pt"))
+
         # transfer weights from policy net to the target net
         self.target_net.load_state_dict(self.policy_net.state_dict())
         # declare the optimizer
@@ -296,7 +314,7 @@ if __name__ == '__main__':
             if terminated:
                 next_state = None
             else:
-                next_state = batchDictionary(states=[createMask(observation)],device=device)
+                next_state = createMask(observation)
 
             # Store the transition in memory
             q_control.memory_replay.push(state, action, next_state, reward)

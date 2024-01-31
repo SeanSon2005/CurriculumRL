@@ -7,9 +7,9 @@ import numpy as np
 import pygame
 from action import Action
 
-MAP_SIZE = 4
-MAX_ITEM_WEIGHT = 2
-MAX_ITEMS = 2
+MAP_SIZE = 30
+MAX_ITEM_WEIGHT = 1
+MAX_ITEMS = 10
 MAX_ROBOTS = 1
 WINDOW_SIZE = 1000
 FRAMERATE = 120
@@ -33,7 +33,7 @@ class AI_CollabEnv(gym.Env):
 		self.observation_space = spaces.Dict(
             {
 				# Stores the current vision of the robot
-				# "frame": spaces.Box(low=-2, high=3, shape=(MAP_SIZE,MAP_SIZE), dtype= np.int16),
+				"frame": spaces.Box(low=-2, high=3, shape=(VISION_DISTANCE*2,VISION_DISTANCE*2), dtype= np.int16),
 				# stores the X and Y position of robot
                 "ego_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype= np.int16),
 				# stores the states of objects held (0: No object, 1: Object in hand)
@@ -86,6 +86,7 @@ class AI_CollabEnv(gym.Env):
 				object_count += 1
 				
 		observation = {
+			"frame": self.generateInfoMap(),
 			"ego_location": self.ego_location,
 			"objects_held": self.objects_held,
 			"num_items": object_count,
@@ -113,8 +114,9 @@ class AI_CollabEnv(gym.Env):
 		# Move Robot
 		if action < 8:
 			if self.move(MOVE_DICT[action]):
+				print("DEATH")
 				terminate = True
-				reward = -10
+				reward = -1
 
 		# Reward for being on object
 		if not terminate:
@@ -122,7 +124,7 @@ class AI_CollabEnv(gym.Env):
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
 					print("TOUCHDOWN")
 					terminate = True
-					reward = 10
+					reward = 4
 					break
 
 		# Pick Object Up
@@ -199,6 +201,31 @@ class AI_CollabEnv(gym.Env):
 		for object in self.item_location:
 			if map[object[0]][object[1]] == 0:
 				map[object[0]][object[1]] = 2
+		return map
+	
+	def generateInfoMap(self):
+		# Empty map
+		map = np.zeros((VISION_DISTANCE*2, VISION_DISTANCE*2),dtype=np.int16) - 2
+		# Wall Placements
+		for r in range(VISION_DISTANCE*2):
+			for c in range(VISION_DISTANCE*2):
+				relative_r = r + self.ego_location[1] - VISION_DISTANCE
+				relative_c = c + self.ego_location[0] - VISION_DISTANCE
+				if relative_r >= MAP_SIZE or \
+				  relative_c >= MAP_SIZE or \
+				  relative_r < 0 or relative_c < 0:
+					map[r][c] = -1
+		# Box Placements
+		for object in self.item_location:
+			# get object location relative to robot's view
+			relative_x = object[0] - self.ego_location[0] + VISION_DISTANCE
+			relative_y = object[1] - self.ego_location[1] + VISION_DISTANCE
+			# bound checks
+			if relative_x >= VISION_DISTANCE*2 or \
+				  relative_y >= VISION_DISTANCE*2 or \
+				  relative_x < 0 or relative_y < 0:
+				continue
+			map[relative_y][relative_x] = 2
 		return map
 	
 	def reset(self, seed=None, options=None):
