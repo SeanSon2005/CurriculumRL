@@ -7,9 +7,9 @@ import numpy as np
 import pygame
 from action import Action
 
-MAP_SIZE = 30
+MAP_SIZE = 20
 MAX_ITEM_WEIGHT = 1
-MAX_ITEMS = 10
+MAX_ITEMS = 3
 MAX_ROBOTS = 1
 WINDOW_SIZE = 1000
 FRAMERATE = 120
@@ -30,29 +30,30 @@ class AI_CollabEnv(gym.Env):
 	def __init__(self, render_mode = True):
 		self.render_mode = render_mode
 		self.action_space = spaces.Discrete(len(Action))
-		self.observation_space = spaces.Dict(
-            {
-				# Stores the current vision of the robot
-				"frame": spaces.Box(low=-2, high=3, shape=(VISION_DISTANCE*2,VISION_DISTANCE*2), dtype= np.int16),
-				# stores the X and Y position of robot
-                "ego_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype= np.int16),
-				# stores the states of objects held (0: No object, 1: Object in hand)
-                "objects_held": spaces.Discrete(2, start=0),
-				# stores the number items in view of the robot (0 - MAX_ITEMS)
-                "num_items": spaces.Discrete(MAX_ITEMS+1), 
-				# stores the info of the item that has been scanned
-				"item_distance": spaces.Box(low=-np.infty, high=np.infty, shape=(MAX_ITEMS,2), dtype= np.int16),
+		# self.observation_space = spaces.Dict(
+        #     {
+		# 		# Stores the current vision of the robot
+		# 		"frame": spaces.Box(low=-2, high=3, shape=(VISION_DISTANCE*2,VISION_DISTANCE*2), dtype= np.int16),
+		# 		# stores the X and Y position of robot
+        #         "ego_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype= np.int16),
+		# 		# stores the states of objects held (0: No object, 1: Object in hand)
+        #         "objects_held": spaces.Discrete(2, start=0),
+		# 		# stores the number items in view of the robot (0 - MAX_ITEMS)
+        #         "num_items": spaces.Discrete(MAX_ITEMS+1), 
+		# 		# stores the info of the item that has been scanned
+		# 		"item_distance": spaces.Box(low=-np.infty, high=np.infty, shape=(MAX_ITEMS,2), dtype= np.int16),
 
-				# "item_weight": spaces.MultiDiscrete(np.array([MAX_ITEM_WEIGHT]*MAX_ITEMS)),
-				# "item_isDangerous": spaces.MultiDiscrete(np.ones(MAX_ITEMS)),
-				# "item_danger_confidence": spaces.Box(low=0, high=1, shape=(MAX_ITEMS,), dtype=float),
+		# 		# "item_weight": spaces.MultiDiscrete(np.array([MAX_ITEM_WEIGHT]*MAX_ITEMS)),
+		# 		# "item_isDangerous": spaces.MultiDiscrete(np.ones(MAX_ITEMS)),
+		# 		# "item_danger_confidence": spaces.Box(low=0, high=1, shape=(MAX_ITEMS,), dtype=float),
 
-				# # stores the strength of the robot (0 - Maxiumum Possible Combined Strength)
-                "strength": spaces.Discrete(MAX_ROBOTS + 2),
-				# # stores the current number of message received (0 - 99)
-                "num_messages": spaces.Discrete(100)
-            }
-        )
+		# 		# # stores the strength of the robot (0 - Maxiumum Possible Combined Strength)
+        #         "strength": spaces.Discrete(MAX_ROBOTS + 2),
+		# 		# # stores the current number of message received (0 - 99)
+        #         "num_messages": spaces.Discrete(100)
+        #     }
+        # )
+		self.observation_space = spaces.Box(low=-2, high=3, shape=(1,VISION_DISTANCE*2,VISION_DISTANCE*2), dtype= np.int16)
 		self.window = None
 
 		# Create Starter Map elements
@@ -62,11 +63,13 @@ class AI_CollabEnv(gym.Env):
 		self.item_isDangerous = np.ones(MAX_ITEMS)
 		self.item_danger_confidence = np.ones(MAX_ITEMS, dtype=float)
 
+		# Generate info for each item
 		for i in range(MAX_ITEMS):
 			r = np.random.randint(0,MAP_SIZE)
 			c = np.random.randint(0,MAP_SIZE)
 			self.item_location[i][0] = r
 			self.item_location[i][1] = c
+			self.item_isDangerous[i] = np.random.randint(0,2)
 
 	def isInView(self, row, col):
 		if row < 0 or col < 0:
@@ -85,15 +88,16 @@ class AI_CollabEnv(gym.Env):
 				item_distance[object_count][1] = y_dist
 				object_count += 1
 				
-		observation = {
-			"frame": self.generateInfoMap(),
-			"ego_location": self.ego_location,
-			"objects_held": self.objects_held,
-			"num_items": object_count,
-			"item_distance": item_distance,
-			"strength" : self.strength,
-			"num_messages": self.num_messages
-        }
+		# observation = {
+		# 	"frame": self.generateInfoMap(),
+		# 	"ego_location": self.ego_location,
+		# 	"objects_held": self.objects_held,
+		# 	"num_items": object_count,
+		# 	"item_distance": item_distance,
+		# 	"strength" : self.strength,
+		# 	"num_messages": self.num_messages
+        # }
+		observation = self.generateInfoMap()
 		return observation
 	
 	def move(self, adjustment):
@@ -113,22 +117,24 @@ class AI_CollabEnv(gym.Env):
 
 		# Move Robot
 		if action < 8:
+			# Reduce reward if left object without picking it up
+			for object_location in self.item_location:
+				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
+					reward -= 2
+			# Perform move and reward calc if ran into wall
 			if self.move(MOVE_DICT[action]):
-				print("DEATH")
 				terminate = True
-				reward = -1
+				reward -= 1
 
 		# Reward for being on object
 		if not terminate:
 			for object_location in self.item_location:
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
-					print("TOUCHDOWN")
-					terminate = True
-					reward = 4
+					reward += 2
 					break
 
 		# Pick Object Up
-		elif action == 8:
+		if action > 7:
 			for object_location in self.item_location:
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1] and self.objects_held == 0:
 					# Denote that object has been picked up (-1 -1 is robot's "storage")
@@ -138,13 +144,13 @@ class AI_CollabEnv(gym.Env):
 					terminate = True
 					reward = 10
 
-		# Drop Object
-		elif action == 9:
-			for object_location in self.item_location:
-				# Place picked up object back on grid
-				if object_location[0] == -1:
-					object_location[0] = self.ego_location[0]
-					object_location[1] = self.ego_location[1]
+		# # Drop Object
+		# elif action == 9:
+		# 	for object_location in self.item_location:
+		# 		# Place picked up object back on grid
+		# 		if object_location[0] == -1:
+		# 			object_location[0] = self.ego_location[0]
+		# 			object_location[1] = self.ego_location[1]
 
 		if self.render_mode:
 			self.render()
@@ -164,14 +170,20 @@ class AI_CollabEnv(gym.Env):
 		canvas.fill((255, 255, 255))
 		px_size = (WINDOW_SIZE / MAP_SIZE)
 
-		# Draw Boxes
+		# Draw Vision limit
 		frame = self.generateOccupancyMap()
 		for r in range(MAP_SIZE):
 			for c in range(MAP_SIZE):
 				if frame[r][c] == -2:
 					pygame.draw.rect(canvas, (100,100,100), pygame.Rect(r*px_size,c*px_size,px_size,px_size))
-				elif frame[r][c] == 2:
-					pygame.draw.rect(canvas, (255,0,0), pygame.Rect(r*px_size,c*px_size,px_size,px_size))
+
+		# Draw objects
+		for i in range(MAX_ITEMS):
+			r, c = self.item_location[i][1], self.item_location[i][0]
+			if self.item_isDangerous[i]:
+				pygame.draw.rect(canvas, (255,0,0), pygame.Rect(r*px_size,c*px_size,px_size,px_size))
+			else:
+				pygame.draw.rect(canvas, (0,255,0), pygame.Rect(r*px_size,c*px_size,px_size,px_size))
 
 		# Draw robot
 		pygame.draw.circle(canvas, (0,0,255), (self.ego_location+0.5) * px_size, px_size/3)
@@ -205,7 +217,7 @@ class AI_CollabEnv(gym.Env):
 	
 	def generateInfoMap(self):
 		# Empty map
-		map = np.zeros((VISION_DISTANCE*2, VISION_DISTANCE*2),dtype=np.int16) - 2
+		map = np.zeros((1,VISION_DISTANCE*2, VISION_DISTANCE*2),dtype=np.int16)
 		# Wall Placements
 		for r in range(VISION_DISTANCE*2):
 			for c in range(VISION_DISTANCE*2):
@@ -214,7 +226,7 @@ class AI_CollabEnv(gym.Env):
 				if relative_r >= MAP_SIZE or \
 				  relative_c >= MAP_SIZE or \
 				  relative_r < 0 or relative_c < 0:
-					map[r][c] = -1
+					map[0,r,c] = -1
 		# Box Placements
 		for object in self.item_location:
 			# get object location relative to robot's view
@@ -225,7 +237,7 @@ class AI_CollabEnv(gym.Env):
 				  relative_y >= VISION_DISTANCE*2 or \
 				  relative_x < 0 or relative_y < 0:
 				continue
-			map[relative_y][relative_x] = 2
+			map[0, relative_y, relative_x] = 2
 		return map
 	
 	def reset(self, seed=None, options=None):
@@ -236,5 +248,13 @@ class AI_CollabEnv(gym.Env):
 		self.objects_held = 0
 		self.strength = 1
 		self.num_messages = 0
+		# Regenerate Objects
+		for i in range(MAX_ITEMS):
+			r = np.random.randint(0,MAP_SIZE)
+			c = np.random.randint(0,MAP_SIZE)
+			self.item_location[i][0] = r
+			self.item_location[i][1] = c
+			self.item_isDangerous[i] = np.random.randint(0,2)
+
 		return self.get_obs(), {}
 

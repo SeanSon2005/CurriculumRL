@@ -26,7 +26,7 @@ register(
      max_episode_steps=100,
 )
 from curriculumRL.action import Action
-from x_transformers import ContinuousTransformerWrapper, Encoder
+from convModel import ConvModel
 
 SAVE_FOLDER = "curriculumRL/runs/"
 LOAD_PREV_WEIGHTS = True
@@ -35,49 +35,13 @@ index = len(os.listdir(SAVE_FOLDER))
 WEIGHTS_FOLDER = SAVE_FOLDER+"run"+str(index+1)+"/"
 os.mkdir(WEIGHTS_FOLDER)
 
-def seed_everything(seed):
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
-    
-
 class Action_Model(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
-        
+        self.model = ConvModel(len(Action),1)
     
-    def forward(self, obs):
-        # get mask
-        mask = obs['mask']
-        # Get item_locations (batch, seq_len, x_y)
-        ego_location = obs['ego_location'].unsqueeze(1)
-        items = obs['item_distance']
-        # Get batch size
-        batch_size = items.shape[0]
-        # (0,0) denotes the class token
-        # START TOKEN, ego_location, item distances
-        input = torch.cat((torch.zeros((batch_size,1,2),
-                                       device=device),
-                           ego_location,
-                           items), axis=1)
-        # adjust mask (true) for START_TOKEN & ego_location
-        mask = torch.cat((torch.ones((batch_size,2),
-                                     dtype=torch.bool,
-                                     device=device),
-                          mask), axis = 1)
-        # Project in
-        emb = self.emb(input)
-        # Transformer
-        transformer_encoding = self.transformer(emb, src_key_padding_mask=~mask)
-        # Project Out
-        model_out = self.deepQ(transformer_encoding)
-        # get the class token only
-        action_Q_values = model_out[:, 0, :]
-        return action_Q_values
+    def forward(self, frame):        
+        return self.model(frame)
 
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
@@ -181,11 +145,11 @@ class DeepQControl:
 
         # get mask of non-final states
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                            batch.next_state)), device=self.device, dtype=torch.bool)
-        # get batch elements
-        non_final_next_states = batchDictionary(states=[s for s in batch.next_state if s is not None],device=device)
+                                          batch.next_state)), device=device, dtype=torch.bool)
+        non_final_next_states = torch.cat([s for s in batch.next_state
+                                                if s is not None])
 
-        state_batch = batchDictionary(states=list(batch.state),device=device)
+        state_batch = torch.cat(batch.state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
 
@@ -233,13 +197,11 @@ if __name__ == '__main__':
     for i_episode in tqdm(range(num_episodes)):
         # Initialize the environment and get it's state
         state, info = env.reset()
-
-        # convert dictionary to tensor
-        state_tensor = batchDictionary(states=[createMask(state)],device=device)
+        state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
 
         # train
         for t in count():
-            action = q_control.select_action(state_tensor)
+            action = q_control.select_action(state)
             observation, reward, terminated, truncated, _ = env.step(action.item())
             reward = torch.tensor([reward], device=device)
             done = terminated or truncated
@@ -247,7 +209,7 @@ if __name__ == '__main__':
             if terminated:
                 next_state = None
             else:
-                next_state = createMask(observation)
+                next_state = torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0)
 
             # Store the transition in memory
             q_control.memory_replay.push(state, action, next_state, reward)
