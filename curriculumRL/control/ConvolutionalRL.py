@@ -29,7 +29,7 @@ from curriculumRL.action import Action
 from convModel import ConvModel
 
 SAVE_FOLDER = "curriculumRL/runs/"
-LOAD_PREV_WEIGHTS = True
+LOAD_PREV_WEIGHTS = False
 
 index = len(os.listdir(SAVE_FOLDER))
 WEIGHTS_FOLDER = SAVE_FOLDER+"run"+str(index+1)+"/"
@@ -38,7 +38,7 @@ os.mkdir(WEIGHTS_FOLDER)
 class Action_Model(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
-        self.model = ConvModel(len(Action),1)
+        self.model = ConvModel(len(Action),2)
     
     def forward(self, frame):        
         return self.model(frame)

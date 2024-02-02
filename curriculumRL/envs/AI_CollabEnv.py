@@ -7,12 +7,11 @@ import numpy as np
 import pygame
 from action import Action
 
-MAP_SIZE = 20
+MAP_SIZE = 15
 MAX_ITEM_WEIGHT = 1
 MAX_ITEMS = 3
 MAX_ROBOTS = 1
 WINDOW_SIZE = 1000
-FRAMERATE = 120
 VISION_DISTANCE = 8
 
 MOVE_DICT = {
@@ -118,31 +117,38 @@ class AI_CollabEnv(gym.Env):
 		# Move Robot
 		if action < 8:
 			# Reduce reward if left object without picking it up
-			for object_location in self.item_location:
-				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
-					reward -= 2
+			for i in range(MAX_ITEMS):
+				if not self.item_isDangerous[i]:
+					if self.item_location[i][0] == self.ego_location[0] and self.item_location[i][1] == self.ego_location[1]:
+						reward -= 5
 			# Perform move and reward calc if ran into wall
 			if self.move(MOVE_DICT[action]):
-				terminate = True
-				reward -= 1
+				reward -= 2
 
 		# Reward for being on object
 		if not terminate:
-			for object_location in self.item_location:
+			for i in range(MAX_ITEMS):
+				object_location = self.item_location[i]
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
-					reward += 2
-					break
+					if not self.item_isDangerous[i]:
+						reward += 5
+				break
 
 		# Pick Object Up
 		if action > 7:
-			for object_location in self.item_location:
+			for i in range(MAX_ITEMS):
+				object_location = self.item_location[i]
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1] and self.objects_held == 0:
 					# Denote that object has been picked up (-1 -1 is robot's "storage")
 					object_location[0] = -1
 					object_location[1] = -1
 					self.objects_held = 1
-					terminate = True
-					reward = 10
+					if self.item_isDangerous[i]:
+						reward = -10
+					else:
+						reward = 20
+						terminate = True
+					break
 
 		# # Drop Object
 		# elif action == 9:
@@ -217,7 +223,7 @@ class AI_CollabEnv(gym.Env):
 	
 	def generateInfoMap(self):
 		# Empty map
-		map = np.zeros((1,VISION_DISTANCE*2, VISION_DISTANCE*2),dtype=np.int16)
+		map = np.zeros((2,VISION_DISTANCE*2, VISION_DISTANCE*2),dtype=np.int16)
 		# Wall Placements
 		for r in range(VISION_DISTANCE*2):
 			for c in range(VISION_DISTANCE*2):
@@ -228,16 +234,21 @@ class AI_CollabEnv(gym.Env):
 				  relative_r < 0 or relative_c < 0:
 					map[0,r,c] = -1
 		# Box Placements
-		for object in self.item_location:
+		for i in range(MAX_ITEMS):
 			# get object location relative to robot's view
-			relative_x = object[0] - self.ego_location[0] + VISION_DISTANCE
-			relative_y = object[1] - self.ego_location[1] + VISION_DISTANCE
+			relative_x = self.item_location[i][0] - self.ego_location[0] + VISION_DISTANCE
+			relative_y = self.item_location[i][1] - self.ego_location[1] + VISION_DISTANCE
 			# bound checks
 			if relative_x >= VISION_DISTANCE*2 or \
 				  relative_y >= VISION_DISTANCE*2 or \
 				  relative_x < 0 or relative_y < 0:
 				continue
 			map[0, relative_y, relative_x] = 2
+			# If item is not dangerous, represent as 1 otherwise -1
+			if self.item_isDangerous[i]:
+				map[1, relative_y, relative_x] = -1
+			else:
+				map[1, relative_y, relative_x] = 1
 		return map
 	
 	def reset(self, seed=None, options=None):
