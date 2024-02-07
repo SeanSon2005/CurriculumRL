@@ -23,13 +23,13 @@ from gymnasium.envs.registration import register
 register(
      id="AI_CollabEnv-v0",
      entry_point="curriculumRL.envs:AI_CollabEnv",
-     max_episode_steps=100,
+     max_episode_steps=200,
 )
 from curriculumRL.action import Action
 from convModel import ConvModel
 
 SAVE_FOLDER = "curriculumRL/runs/"
-LOAD_PREV_WEIGHTS = False
+LOAD_PREV_WEIGHTS = True
 
 index = len(os.listdir(SAVE_FOLDER))
 WEIGHTS_FOLDER = SAVE_FOLDER+"run"+str(index+1)+"/"
@@ -69,8 +69,8 @@ class DeepQControl:
 
         # define constants
         self.BATCH_SIZE = 128
-        self.GAMMA = 0.99
-        self.EPS_START = 0.9
+        self.GAMMA = 0.9
+        self.EPS_START = 0.95
         self.EPS_END = 0.05
         self.EPS_DECAY = 1000
         self.TAU = 0.005
@@ -98,6 +98,7 @@ class DeepQControl:
                 
     def select_action(self, state):
         global steps_done
+        # epsilon threshold to decide if action should use model or be randomly sampled
         sample = random.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * \
             math.exp(-1. * steps_done / self.EPS_DECAY)

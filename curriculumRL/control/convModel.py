@@ -9,10 +9,10 @@ class ConvModel(nn.Module):
         super().__init__()
         self.layers = nn.Sequential(
             # Embedding num_inputs -> 64 of integers in map
-            nn.Conv2d(num_inputs, 64, kernel_size=1, stride=1, padding=0), # num_inputs ,16,16 -> 64, 16, 16
+            nn.Conv2d(num_inputs, 64, kernel_size=1, stride=1, padding=0), # num_inputs ,17,17 -> 64, 17, 17
             # Normal Conv
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1), # 64, 16, 16 -> 64, 16, 16
-            nn.MaxPool2d(2,2), # 64, 16, 16 -> 64, 8, 8
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1), # 64, 17, 17 -> 64, 17, 17
+            nn.MaxPool2d(2,2), # 64, 17, 17 -> 64, 8, 8
             nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1), # 64, 8, 8 -> 128, 8, 8
             nn.MaxPool2d(2,2), # 128, 8, 8-> 128, 4, 4
             nn.Flatten(), # 128, 4, 4 -> 2048
