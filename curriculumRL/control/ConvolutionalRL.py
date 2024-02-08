@@ -38,7 +38,7 @@ os.mkdir(WEIGHTS_FOLDER)
 class Action_Model(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
-        self.model = ConvModel(len(Action),2)
+        self.model = ConvModel(len(Action),3)
     
     def forward(self, frame):        
         return self.model(frame)

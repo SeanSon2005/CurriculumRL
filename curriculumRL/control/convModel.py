@@ -3,11 +3,27 @@ import torch.nn as nn
 from torch import Tensor
 import torch.nn.functional as F
 import math
+from torch.nn import TransformerDecoder, TransformerDecoderLayer
+
+class SinusoidalPosEmb(nn.Module):
+    def __init__(self, dim=16, M=10000):
+        super().__init__()
+        self.dim = dim
+        self.M = M
+
+    def forward(self, x):
+        device = x.device
+        half_dim = self.dim // 2
+        emb = math.log(self.M) / half_dim
+        emb = torch.exp(torch.arange(half_dim, device=device) * (-emb))
+        emb = x[...,None] * emb[None,...]
+        emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
+        return emb
 
 class ConvModel(nn.Module):
     def __init__(self, num_actions, num_inputs):
         super().__init__()
-        self.layers = nn.Sequential(
+        self.conv_layers = nn.Sequential(
             # Embedding num_inputs -> 64 of integers in map
             nn.Conv2d(num_inputs, 64, kernel_size=1, stride=1, padding=0), # num_inputs ,17,17 -> 64, 17, 17
             # Normal Conv
@@ -21,8 +37,15 @@ class ConvModel(nn.Module):
             nn.ReLU(),
             nn.Linear(512, 128), # 512 -> 128
             nn.ReLU(),
-            nn.Linear(128, num_actions), # 128 -> out
         )
-    def forward(self, x) -> Tensor:
-        out = self.layers(x)
+        self.encode_displacement = nn.Linear(2, 16)
+        self.feed_forward = nn.Sequential(
+            nn.Linear(128+16, num_actions), # 128+16 -> out
+        )
+        
+    def forward(self, x: Tensor, displacement : Tensor) -> Tensor:
+        conv_out = self.conv_layers(x) # (bs, 128)
+        disp_out = self.encode_displacement(displacement) # (bs, 16)
+        features = torch.cat(conv_out,disp_out) # (bs, 128+16)
+        out = self.feed_forward(features)
         return out

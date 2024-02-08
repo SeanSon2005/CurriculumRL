@@ -25,8 +25,7 @@ register(
      entry_point="curriculumRL.envs:AI_CollabEnv",
      max_episode_steps=200,
 )
-from curriculumRL.action import Action
-from convModel import ConvModel
+from taskModel import TaskModel
 
 # takes in the observation matrix
 # returns which task model should focus on
@@ -41,7 +40,7 @@ os.mkdir(WEIGHTS_FOLDER)
 class Action_Model(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
-        self.model = ConvModel(len(Action),2)
+        self.model = TaskModel()
     
     def forward(self, frame):        
         return self.model(frame)
