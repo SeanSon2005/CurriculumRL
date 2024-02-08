@@ -19,8 +19,11 @@ class Action(Enum):
 
 # More sub-Tasks to be defined (These are the basic ones)
 class Tasks(Enum):
-    move = 0
-    comms = 1
-    grab_object = 2
-    drop_object = 3
+    idle = 0 # (do whatever's necessary while waiting for another robot?)
+    collect_object = 1 # go to an object
+    drop_off_object = 2 # drop off an object at center
+    communicate = 3 # send message to another robot
+    follow_robot = 4 # follow another robot (help pick up objects)
+    arbitrary_task = 5 # maybe a special task model will learn?
+    
     
