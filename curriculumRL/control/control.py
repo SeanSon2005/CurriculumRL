@@ -19,7 +19,7 @@ for i in range(1):
         action = env.action_space.sample()  # agent policy that uses the observation and info
         observation, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
-        time.sleep(0.5)
+        time.sleep(0.2)
 
 
 env.close()

@@ -7,15 +7,16 @@ import numpy as np
 import pygame
 from action import Action
 
-MAP_SIZE = 30
+MAP_SIZE = 12
 MAX_ITEM_WEIGHT = 10
-MAX_ITEMS = 4
+MAX_ITEMS = 8
 MIDDLE_SPAWN_BAN_RADIUS = MAP_SIZE // 4
-MAX_OTHER_ROBOTS = 4
+MAX_OTHER_ROBOTS = 2
 ROBOT_SPAWN_RADIUS = 5
 WINDOW_SIZE = 1000
 VISION_DISTANCE = 8
 VISION_LENGTH = VISION_DISTANCE*2+1
+MAX_LOSS = 200
 
 MOVE_DICT = {
 	0:(0,-1),
@@ -55,7 +56,11 @@ class AI_CollabEnv(gym.Env):
         #         "num_messages": spaces.Discrete(100)
         #     }
         # )
-		self.observation_space = spaces.Box(low=-2, high=3, shape=(1,VISION_LENGTH*2,VISION_LENGTH*2), dtype= np.int16)
+		self.observation_space = spaces.Dict({
+			"frame":spaces.Box(low=-2, high=3, shape=(1,VISION_LENGTH*2,VISION_LENGTH*2), dtype= np.int16),
+			"displacement": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype= np.int16),
+		})
+
 		self.window = None
 
 		# Create Starter Map elements
@@ -67,7 +72,10 @@ class AI_CollabEnv(gym.Env):
 		self.item_danger_confidence = np.ones(MAX_ITEMS, dtype=float)
 
 	def get_obs(self):
-		observation = self.generateInfoMap()
+		observation = {
+			"frame":self.generateInfoMap(),
+			"displacement":self.displacement, # remember it is by row, col
+		}
 		return observation
 	
 	def move(self, adjustment):
@@ -78,6 +86,8 @@ class AI_CollabEnv(gym.Env):
 			return True
 		self.ego_location[0] += x
 		self.ego_location[1] += y
+		self.displacement[0] -= x
+		self.displacement[1] += y
 		return False
 	
 	def step(self, action):
@@ -96,13 +106,13 @@ class AI_CollabEnv(gym.Env):
 			if self.move(MOVE_DICT[action]):
 				print("CRASH WALL")
 				terminate = True
-				reward -= 100
+				reward -= 40
 			# Check if collision robot
 			for robot in self.robot_location:
 				if robot[0] == self.ego_location[0] and robot[1] == self.ego_location[1]:
 					print("CRASH ROBOT")
 					terminate = True
-					reward -= 100
+					reward -= 40
 
 		# Reward for being on object
 		if not terminate:
@@ -110,8 +120,8 @@ class AI_CollabEnv(gym.Env):
 				object_location = self.item_location[i]
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
 					if not self.item_isDangerous[i]:
-						reward = 20
-				break
+						reward = 50
+					break
 
 		# Pick Object Up
 		if action == 8:
@@ -126,7 +136,8 @@ class AI_CollabEnv(gym.Env):
 					if self.item_isDangerous[i]:
 						reward = -20
 					else:
-						reward = 200
+						reward = 100
+						print("TOUCHDOWN")
 					break
 
 		# Drop Object
@@ -260,6 +271,7 @@ class AI_CollabEnv(gym.Env):
 
 		# Reset Robot Values
 		self.ego_location = np.array([MAP_SIZE//2,MAP_SIZE//2],dtype=np.int16)
+		self.displacement = np.zeros(2,dtype=np.int16)
 		self.objects_held = 0
 		self.strength = 1
 		self.num_messages = 0
@@ -269,13 +281,18 @@ class AI_CollabEnv(gym.Env):
 			self.robot_location[i][1] = np.random.randint(0,MAP_SIZE)
 		# Regenerate Objects
 		for i in range(MAX_ITEMS):
-			if np.random.random() > 0.5:
+			side = np.random.random()
+			if side < 0.25:
 				r = np.random.randint(0,MAP_SIZE//2 - MIDDLE_SPAWN_BAN_RADIUS)
-			else:
+				c = np.random.randint(0,MAP_SIZE)
+			elif side < 0.5:
 				r = np.random.randint(MAP_SIZE//2 + MIDDLE_SPAWN_BAN_RADIUS, MAP_SIZE)
-			if np.random.random() > 0.5:
+				c = np.random.randint(0,MAP_SIZE)
+			elif side < 0.75:
+				r = np.random.randint(0,MAP_SIZE)
 				c = np.random.randint(0,MAP_SIZE//2 - MIDDLE_SPAWN_BAN_RADIUS)
 			else:
+				r = np.random.randint(0,MAP_SIZE)
 				c = np.random.randint(MAP_SIZE//2 + MIDDLE_SPAWN_BAN_RADIUS, MAP_SIZE)
 			self.item_location[i][0] = r
 			self.item_location[i][1] = c

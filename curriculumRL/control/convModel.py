@@ -35,17 +35,19 @@ class ConvModel(nn.Module):
             # Feed Forward
             nn.Linear(2048, 512), # 2048 -> 512
             nn.ReLU(),
-            nn.Linear(512, 128), # 512 -> 128
-            nn.ReLU(),
         )
-        self.encode_displacement = nn.Linear(2, 16)
+        self.encode_displacement = nn.Sequential(
+            nn.Linear(2, 16),
+            nn.ReLU()
+        )
         self.feed_forward = nn.Sequential(
-            nn.Linear(128+16, num_actions), # 128+16 -> out
+            nn.Linear(512 + 16, 128), # 512+16 -> 128
+            nn.Linear(128, num_actions), # 128 -> out
         )
         
     def forward(self, x: Tensor, displacement : Tensor) -> Tensor:
-        conv_out = self.conv_layers(x) # (bs, 128)
+        conv_out = self.conv_layers(x) # (bs, 512)
         disp_out = self.encode_displacement(displacement) # (bs, 16)
-        features = torch.cat(conv_out,disp_out) # (bs, 128+16)
-        out = self.feed_forward(features)
+        features = torch.cat((conv_out,disp_out), dim=1) # (bs, 512+16)
+        out = self.feed_forward(features) # (512+16) -> out
         return out

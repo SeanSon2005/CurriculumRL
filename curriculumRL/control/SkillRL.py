@@ -31,7 +31,7 @@ from taskModel import TaskModel
 # returns which task model should focus on
 
 SAVE_FOLDER = "curriculumRL/taskRuns/"
-LOAD_PREV_WEIGHTS = True
+LOAD_PREV_WEIGHTS = False
 
 index = len(os.listdir(SAVE_FOLDER))
 WEIGHTS_FOLDER = SAVE_FOLDER+"run"+str(index+1)+"/"
@@ -111,7 +111,6 @@ class DeepQControl:
         else:
             return torch.tensor([[env.action_space.sample()]], device=device, dtype=torch.long)
 
-        
     def plot_durations(self, show_result=False):
         plt.figure(1)
         durations_t = torch.tensor(self.episode_durations, dtype=torch.float)
