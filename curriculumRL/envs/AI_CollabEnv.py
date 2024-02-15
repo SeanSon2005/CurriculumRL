@@ -9,9 +9,9 @@ from action import Action
 
 MAP_SIZE = 15
 MAX_ITEM_WEIGHT = 10
-MAX_ITEMS = 8
+MAX_ITEMS = 4
 MIDDLE_SPAWN_BAN_RADIUS = MAP_SIZE // 4
-MAX_OTHER_ROBOTS = 8
+MAX_OTHER_ROBOTS = 4
 ROBOT_SPAWN_RADIUS = 6
 WINDOW_SIZE = 980
 VISION_DISTANCE = 8
@@ -74,13 +74,11 @@ class AI_CollabEnv(gym.Env):
 	def get_obs(self):
 		observation = {
 			"frame":self.generateInfoMap(),
-			"descriptors":np.array([self.displacement[0],
-							self.displacement[1],
-							self.objects_held,
-							1,
-							1]), 
-			# remember it is by row, col
-			# includes ego_location_x and y, objects_held, strength, and num_messages
+			"descriptors":np.array([self.displacement[0], 	# ego_location_row
+							self.displacement[1],		  	# ego_location_col
+							self.objects_held,				# objects_held
+							1,								# strength
+							0]), 							# num_messages
 		}
 		return observation
 	
@@ -130,31 +128,27 @@ class AI_CollabEnv(gym.Env):
 			for i in range(MAX_ITEMS):
 				object_location = self.item_location[i]
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
-					if not self.item_isDangerous[i]:
-						print("TOUCHDOWN")
+					if not self.item_isDangerous[i] and self.objects_held == 0:
+						print("COLLECTED")
 						# Denote that object has been picked up (-1 -1 is robot's "storage")
 						object_location[0] = -1
 						object_location[1] = -1
 						self.objects_held = 1
 						reward = 40
-						terminate = True
+						# terminate = True
 					break
 
 		# Drop Object
-		elif action == 8 or action == 9:
+		if action == 8 or action == 9:
 			for object_location in self.item_location:
 				# Place picked up object back on grid
 				if object_location[0] == -1:
 					object_location[0] = self.ego_location[0]
 					object_location[1] = self.ego_location[1]
-
-		# Send message to robots
-		elif action == 10:
-			pass
-
-		# wait do nothing
-		else:
-			pass
+					if abs(self.ego_location[0] - MAP_SIZE // 2) < 5 and abs(self.ego_location[1] - MAP_SIZE // 2) < 5:
+						print("TOUCHDOWN")
+						terminate = True
+						reward = 200
 
 		if self.render_mode:
 			self.render()

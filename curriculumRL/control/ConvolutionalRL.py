@@ -22,13 +22,13 @@ from gymnasium.envs.registration import register
 register(
      id="AI_CollabEnv-v0",
      entry_point="curriculumRL.envs:AI_CollabEnv",
-     max_episode_steps=300,
+     max_episode_steps=400,
 )
 from curriculumRL.action import Action
 from convModel import ConvModel
 
 SAVE_FOLDER = "curriculumRL/runs/"
-LOAD_PREV_WEIGHTS = False
+LOAD_PREV_WEIGHTS = True
 
 index = len(os.listdir(SAVE_FOLDER))
 WEIGHTS_FOLDER = SAVE_FOLDER+"run"+str(index+1)+"/"
