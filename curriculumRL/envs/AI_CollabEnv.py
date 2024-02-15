@@ -7,7 +7,7 @@ import numpy as np
 import pygame
 from action import Action
 
-MAP_SIZE = 32
+MAP_SIZE = 15
 MAX_ITEM_WEIGHT = 10
 MAX_ITEMS = 8
 MIDDLE_SPAWN_BAN_RADIUS = MAP_SIZE // 4
@@ -57,10 +57,8 @@ class AI_CollabEnv(gym.Env):
         # )
 		self.observation_space = spaces.Dict({
 			"frame":spaces.Box(low=-2, high=3, shape=(1,VISION_LENGTH*2,VISION_LENGTH*2), dtype= np.int16),
-			"displacement": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype= np.int16),
-			"objects_held": spaces.Discrete(2, start=0),
-			"strength": spaces.Discrete(2),
-			"num_messages": spaces.Discrete(100),
+			"descriptors": spaces.Box(low=-np.infty, high=np.infty, shape=(5,), dtype= np.int16),
+			# includes ego_location_x and y, objects_held, strength, and num_messages
 		})
 
 		self.window = None
@@ -76,10 +74,13 @@ class AI_CollabEnv(gym.Env):
 	def get_obs(self):
 		observation = {
 			"frame":self.generateInfoMap(),
-			"displacement":self.displacement, # remember it is by row, col
-			"objects_held":self.objects_held,
-			"strength": 1,
-			"num_messages": 1,
+			"descriptors":np.array([self.displacement[0],
+							self.displacement[1],
+							self.objects_held,
+							1,
+							1]), 
+			# remember it is by row, col
+			# includes ego_location_x and y, objects_held, strength, and num_messages
 		}
 		return observation
 	

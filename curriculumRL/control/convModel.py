@@ -33,19 +33,21 @@ class ConvModel(nn.Module):
             nn.MaxPool2d(2,2), # 128, 8, 8-> 128, 4, 4
             nn.Flatten(), # 128, 4, 4 -> 2048
             # Feed Forward
-            nn.Linear(2048, 512), # 2048 -> 512
+            nn.Linear(2048, 1024), # 2048 -> 1024
+            nn.Linear(1024, 512),  # 1024 -> 512
         )
-        self.encode_displacement = nn.Sequential(
-            nn.Linear(2, 16),
+        self.encode_descriptors = nn.Sequential(
+            nn.Linear(5, 64),
         )
         self.feed_forward = nn.Sequential(
-            nn.Linear(512 + 16, 128), # 512+16 -> 128
-            nn.Linear(128, num_actions), # 128 -> out
+            nn.Linear(512 + 64, 256),   # 512+64 -> 256
+            nn.Linear(256, 64),        # 256 -> 64
+            nn.Linear(64, num_actions), # 64 -> out
         )
         
-    def forward(self, x: Tensor, displacement : Tensor) -> Tensor:
+    def forward(self, x: Tensor, descriptors : Tensor) -> Tensor:
         conv_out = self.conv_layers(x) # (bs, 512)
-        disp_out = self.encode_displacement(displacement) # (bs, 16)
+        disp_out = self.encode_descriptors(descriptors) # (bs, 16)
         features = torch.cat((conv_out,disp_out), dim=1) # (bs, 512+16)
         out = self.feed_forward(features) # (512+16) -> out
         return out
