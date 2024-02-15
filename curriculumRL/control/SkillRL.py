@@ -2,14 +2,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
+from torch import Tensor
 
 from tqdm import tqdm
 import math
 import numpy as np
 import random
 from collections import deque, namedtuple
-import json
 import matplotlib
 import matplotlib.pyplot as plt
 from IPython import display
@@ -23,14 +22,12 @@ from gymnasium.envs.registration import register
 register(
      id="AI_CollabEnv-v0",
      entry_point="curriculumRL.envs:AI_CollabEnv",
-     max_episode_steps=200,
+     max_episode_steps=100,
 )
-from taskModel import TaskModel
+from curriculumRL.action import Action
+from convModel import ConvModel
 
-# takes in the observation matrix
-# returns which task model should focus on
-
-SAVE_FOLDER = "curriculumRL/taskRuns/"
+SAVE_FOLDER = "curriculumRL/runs/"
 LOAD_PREV_WEIGHTS = False
 
 index = len(os.listdir(SAVE_FOLDER))
@@ -40,13 +37,16 @@ os.mkdir(WEIGHTS_FOLDER)
 class Action_Model(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
-        self.model = TaskModel()
+        self.model = ConvModel(len(Action),3)
     
-    def forward(self, frame):        
-        return self.model(frame)
+    def forward(self, frame: Tensor, displacement : Tensor) -> Tensor:     
+        return self.model(frame, displacement)
 
 Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
+                        ('state_frame', 'state_displacement', 
+                         'action', 
+                         'next_state_frame', 'next_state_displacement',
+                         'reward'))
 
 class ReplayMemory(object):
 
@@ -98,7 +98,7 @@ class DeepQControl:
         self.is_ipython = 'inline' in matplotlib.get_backend()
         plt.ion()
                 
-    def select_action(self, state):
+    def select_action(self, state_frame, state_displacement):
         global steps_done
         # epsilon threshold to decide if action should use model or be randomly sampled
         sample = random.random()
@@ -107,10 +107,11 @@ class DeepQControl:
         steps_done += 1
         if sample > eps_threshold:
             with torch.no_grad():
-                return self.policy_net(state).max(1).indices.view(1, 1)
+                return self.policy_net(state_frame, state_displacement).max(1).indices.view(1, 1)
         else:
             return torch.tensor([[env.action_space.sample()]], device=device, dtype=torch.long)
 
+        
     def plot_durations(self, show_result=False):
         plt.figure(1)
         durations_t = torch.tensor(self.episode_durations, dtype=torch.float)
@@ -147,18 +148,22 @@ class DeepQControl:
 
         # get mask of non-final states
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                          batch.next_state)), device=device, dtype=torch.bool)
-        non_final_next_states = torch.cat([s for s in batch.next_state
+                                          batch.next_state_frame)), device=device, dtype=torch.bool)
+        non_final_next_states_frame = torch.cat([s for s in batch.next_state_frame
+                                                if s is not None])
+        non_final_next_states_displacement = torch.cat([s for s in batch.next_state_displacement
                                                 if s is not None])
 
-        state_batch = torch.cat(batch.state)
+        state_batch_frame = torch.cat(batch.state_frame)
+        state_batch_displacement = torch.cat(batch.state_displacement)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net.
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+        state_action_values = self.policy_net(state_batch_frame, 
+                                              state_batch_displacement).gather(1, action_batch)
 
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
@@ -167,7 +172,8 @@ class DeepQControl:
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
         with torch.no_grad():
-            next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1).values
+            next_state_values[non_final_mask] = self.target_net(non_final_next_states_frame,
+                                                                non_final_next_states_displacement).max(1).values
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
 
@@ -199,25 +205,32 @@ if __name__ == '__main__':
     for i_episode in tqdm(range(num_episodes)):
         # Initialize the environment and get it's state
         state, info = env.reset()
-        state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+        state_frame = torch.tensor(state['frame'], dtype=torch.float32, device=device).unsqueeze(0)
+        state_displacement = torch.tensor(state['displacement'], dtype=torch.float32, device=device).unsqueeze(0)
 
         # train
         for t in count():
-            action = q_control.select_action(state)
+            action = q_control.select_action(state_frame, state_displacement)
             observation, reward, terminated, truncated, _ = env.step(action.item())
             reward = torch.tensor([reward], device=device)
             done = terminated or truncated
 
             if terminated:
-                next_state = None
+                next_state_frame = None
+                next_state_displacement = None
             else:
-                next_state = torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0)
+                next_state_frame = torch.tensor(observation['frame'], dtype=torch.float32, device=device).unsqueeze(0)
+                next_state_displacement = torch.tensor(observation['displacement'], dtype=torch.float32, device=device).unsqueeze(0)
 
             # Store the transition in memory
-            q_control.memory_replay.push(state, action, next_state, reward)
+            q_control.memory_replay.push(state_frame, state_displacement, 
+                                         action, 
+                                         next_state_frame, next_state_displacement, 
+                                         reward)
 
             # Move to the next state
-            state = next_state
+            state_frame = next_state_frame
+            state_displacement = next_state_displacement
 
             # Perform one step of the optimization (on the policy network)
             q_control.optimize_model()

@@ -7,16 +7,15 @@ import numpy as np
 import pygame
 from action import Action
 
-MAP_SIZE = 12
+MAP_SIZE = 32
 MAX_ITEM_WEIGHT = 10
 MAX_ITEMS = 8
 MIDDLE_SPAWN_BAN_RADIUS = MAP_SIZE // 4
-MAX_OTHER_ROBOTS = 2
-ROBOT_SPAWN_RADIUS = 5
-WINDOW_SIZE = 1000
+MAX_OTHER_ROBOTS = 8
+ROBOT_SPAWN_RADIUS = 6
+WINDOW_SIZE = 980
 VISION_DISTANCE = 8
 VISION_LENGTH = VISION_DISTANCE*2+1
-MAX_LOSS = 200
 
 MOVE_DICT = {
 	0:(0,-1),
@@ -59,6 +58,9 @@ class AI_CollabEnv(gym.Env):
 		self.observation_space = spaces.Dict({
 			"frame":spaces.Box(low=-2, high=3, shape=(1,VISION_LENGTH*2,VISION_LENGTH*2), dtype= np.int16),
 			"displacement": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype= np.int16),
+			"objects_held": spaces.Discrete(2, start=0),
+			"strength": spaces.Discrete(2),
+			"num_messages": spaces.Discrete(100),
 		})
 
 		self.window = None
@@ -75,6 +77,9 @@ class AI_CollabEnv(gym.Env):
 		observation = {
 			"frame":self.generateInfoMap(),
 			"displacement":self.displacement, # remember it is by row, col
+			"objects_held":self.objects_held,
+			"strength": 1,
+			"num_messages": 1,
 		}
 		return observation
 	
@@ -91,14 +96,9 @@ class AI_CollabEnv(gym.Env):
 		return False
 	
 	def step(self, action):
-		# init reward as -1 (penalize more steps taken)
-		reward = -1
+		# init reward as 0
+		reward = 0
 		terminate = False
-
-		# Update Other Robot positions
-		# for robot in self.robot_location:
-		# 	robot[0] += np.random.randint(-1,2)
-		# 	robot[1] += np.random.randint(-1,2)
 
 		# Move Robot
 		if action < 8:
@@ -113,35 +113,34 @@ class AI_CollabEnv(gym.Env):
 					print("CRASH ROBOT")
 					terminate = True
 					reward -= 40
+		
+		# Update Other Robot positions
+		for robot in self.robot_location:
+			x = np.random.randint(-1,2)
+			y = np.random.randint(-1,2)
+			if (robot[0] + x) >= 0 and (robot[0] + x) < MAP_SIZE:
+				robot[0] += x
+			if (robot[1] + y) >= 0 and (robot[1] + y) < MAP_SIZE:
+				robot[1] += y
 
 		# Reward for being on object
 		if not terminate:
+			# Only if robot has no object in hand
 			for i in range(MAX_ITEMS):
 				object_location = self.item_location[i]
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
 					if not self.item_isDangerous[i]:
-						reward = 50
-					break
-
-		# Pick Object Up
-		if action == 8:
-			for i in range(MAX_ITEMS):
-				object_location = self.item_location[i]
-				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1] and self.objects_held == 0:
-					# Denote that object has been picked up (-1 -1 is robot's "storage")
-					object_location[0] = -1
-					object_location[1] = -1
-					self.objects_held = 1
-					terminate = True
-					if self.item_isDangerous[i]:
-						reward = -20
-					else:
-						reward = 100
 						print("TOUCHDOWN")
+						# Denote that object has been picked up (-1 -1 is robot's "storage")
+						object_location[0] = -1
+						object_location[1] = -1
+						self.objects_held = 1
+						reward = 40
+						terminate = True
 					break
 
 		# Drop Object
-		elif action == 9:
+		elif action == 8 or action == 9:
 			for object_location in self.item_location:
 				# Place picked up object back on grid
 				if object_location[0] == -1:

@@ -22,7 +22,7 @@ from gymnasium.envs.registration import register
 register(
      id="AI_CollabEnv-v0",
      entry_point="curriculumRL.envs:AI_CollabEnv",
-     max_episode_steps=100,
+     max_episode_steps=300,
 )
 from curriculumRL.action import Action
 from convModel import ConvModel
@@ -78,6 +78,7 @@ class DeepQControl:
         self.TAU = 0.005
         self.LR = 1e-4
         self.episode_durations = []
+        self.episode_rewards = []
 
         # define models
         self.policy_net = Action_Model().to(self.device)
@@ -115,6 +116,7 @@ class DeepQControl:
     def plot_durations(self, show_result=False):
         plt.figure(1)
         durations_t = torch.tensor(self.episode_durations, dtype=torch.float)
+        rewards_t = torch.tensor(self.episode_rewards, dtype=torch.float)
         if show_result:
             plt.title('Result')
         else:
@@ -122,12 +124,15 @@ class DeepQControl:
             plt.title('Training...')
         plt.xlabel('Episode')
         plt.ylabel('Duration')
-        plt.plot(durations_t.numpy())
+        plt.plot(rewards_t.numpy(), label="reward")
+        plt.plot(durations_t.numpy(), label='duration')
         # Take 100 episode averages and plot them too
         if len(durations_t) >= 100:
             means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
             means = torch.cat((torch.zeros(99), means))
-            plt.plot(means.numpy())
+            plt.plot(means.numpy(), label="mean")
+
+        plt.legend()
 
         plt.pause(0.001)  # pause a bit so that plots are updated
         if self.is_ipython:
@@ -207,7 +212,6 @@ if __name__ == '__main__':
         state, info = env.reset()
         state_frame = torch.tensor(state['frame'], dtype=torch.float32, device=device).unsqueeze(0)
         state_displacement = torch.tensor(state['displacement'], dtype=torch.float32, device=device).unsqueeze(0)
-
         # train
         for t in count():
             action = q_control.select_action(state_frame, state_displacement)
@@ -244,6 +248,7 @@ if __name__ == '__main__':
             q_control.target_net.load_state_dict(target_net_state_dict)
 
             if done:
+                q_control.episode_rewards.append(reward)
                 q_control.episode_durations.append(t + 1)
                 q_control.plot_durations()
                 break

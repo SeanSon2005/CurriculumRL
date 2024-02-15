@@ -34,11 +34,9 @@ class ConvModel(nn.Module):
             nn.Flatten(), # 128, 4, 4 -> 2048
             # Feed Forward
             nn.Linear(2048, 512), # 2048 -> 512
-            nn.ReLU(),
         )
         self.encode_displacement = nn.Sequential(
             nn.Linear(2, 16),
-            nn.ReLU()
         )
         self.feed_forward = nn.Sequential(
             nn.Linear(512 + 16, 128), # 512+16 -> 128
