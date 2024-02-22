@@ -111,7 +111,7 @@ class AI_CollabEnv(gym.Env):
 				if robot[0] == self.ego_location[0] and robot[1] == self.ego_location[1]:
 					print("CRASH ROBOT")
 					terminate = True
-					reward -= 40
+					reward -= 60
 		
 		# Update Other Robot positions
 		for robot in self.robot_location:
@@ -129,7 +129,6 @@ class AI_CollabEnv(gym.Env):
 				object_location = self.item_location[i]
 				if object_location[0] == self.ego_location[0] and object_location[1] == self.ego_location[1]:
 					if not self.item_isDangerous[i] and self.objects_held == 0:
-						print("COLLECTED")
 						# Denote that object has been picked up (-1 -1 is robot's "storage")
 						object_location[0] = -1
 						object_location[1] = -1
@@ -140,15 +139,22 @@ class AI_CollabEnv(gym.Env):
 
 		# Drop Object
 		if action == 8 or action == 9:
-			for object_location in self.item_location:
-				# Place picked up object back on grid
-				if object_location[0] == -1:
-					object_location[0] = self.ego_location[0]
-					object_location[1] = self.ego_location[1]
-					if abs(self.ego_location[0] - MAP_SIZE // 2) < 5 and abs(self.ego_location[1] - MAP_SIZE // 2) < 5:
-						print("TOUCHDOWN")
-						terminate = True
-						reward = 200
+			# punish for wasting action
+			if self.objects_held == 0:
+				reward -= 10
+			else:
+				for object_location in self.item_location:
+					# Place picked up object back on grid
+					if object_location[0] == -1:
+						object_location[0] = self.ego_location[0]
+						object_location[1] = self.ego_location[1]
+						if abs(self.ego_location[0] - MAP_SIZE // 2) < 3 and abs(self.ego_location[1] - MAP_SIZE // 2) < 3:
+							print("TOUCHDOWN")
+							terminate = True
+							reward = 200
+						else:
+							reward -= 40
+						self.objects_held = 0
 
 		if self.render_mode:
 			self.render()
